@@ -364,21 +364,42 @@ def get_ai_message_draft(
             "minimum_order_quantity": 500
         }
 
+    # Fetch up to 10 recent messages in chronological order
     recent_msgs = db.query(Message).filter(
         Message.conversation_id == conversation_id
-    ).order_by(Message.message_timestamp.desc()).limit(5).all()
+    ).order_by(Message.message_timestamp.desc()).limit(10).all()
+    recent_msgs_chrono = list(reversed(recent_msgs))
 
-    history = [f"{m.direction}: {m.message_text}" for m in reversed(recent_msgs)]
+    # Find the target message being responded to
+    target_msg = None
+    if payload.reply_to_message_id:
+        target_msg = db.query(Message).filter(Message.id == payload.reply_to_message_id).first()
+
+    # If not explicitly specified, find the most recent inbound message from the customer
+    if not target_msg:
+        for m in reversed(recent_msgs_chrono):
+            if m.direction == "INBOUND":
+                target_msg = m
+                break
+
+    # If still no inbound message, take the latest message
+    if not target_msg and recent_msgs_chrono:
+        target_msg = recent_msgs_chrono[-1]
+
+    history = [f"{m.direction}: {m.message_text}" for m in recent_msgs_chrono]
+    last_customer_text = target_msg.message_text if target_msg else None
 
     draft = generate_smart_reply_draft_ai(
         offer_info=offer_info,
         shopkeeper_name=conv.shopkeeper.shopkeeper_name,
         shop_name=conv.shopkeeper.shop_name,
         recent_history=history,
-        intent=payload.intent or "initial_pitch"
+        last_customer_message=last_customer_text,
+        intent=payload.intent
     )
 
     return AIDraftResponse(
         suggested_text=draft.get("suggested_text", ""),
-        reasoning=draft.get("reasoning", "")
+        reasoning=draft.get("reasoning", ""),
+        reply_to_message_id=target_msg.id if target_msg else None
     )

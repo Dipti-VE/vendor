@@ -95,61 +95,109 @@ def generate_smart_reply_draft_ai(
     shopkeeper_name: str,
     shop_name: str,
     recent_history: List[str],
-    intent: str = "initial_pitch"
+    last_customer_message: Optional[str] = None,
+    intent: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    Drafts a personalized, professional WhatsApp message for the vendor to send.
+    Drafts a personalized, context-aware WhatsApp message for the vendor to send.
+    Directly addresses previous customer message, negotiates, or confirms details.
     """
-    if not client:
-        # Fallback template generator
-        p_name = offer_info.get("product_name", "packaging supplies")
-        p_price = offer_info.get("selling_price", 0.0)
-        p_qty = offer_info.get("available_quantity", 0)
-        p_moq = offer_info.get("minimum_order_quantity", 100)
-        
-        fallback_text = (
-            f"Hello {shopkeeper_name}! Greetings from GreenPack Solutions. "
-            f"We have high quality {p_name} available at ₹{p_price:.2f}/piece (MOQ: {p_moq:,} pcs). "
-            f"We currently have {p_qty:,} pieces in ready stock. Would you be interested in placing an order for {shop_name}?"
-        )
+    p_name = offer_info.get("product_name", "packaging supplies")
+    p_price = offer_info.get("selling_price", 1.0)
+    p_qty = offer_info.get("available_quantity", 1000)
+    p_moq = offer_info.get("minimum_order_quantity", 100)
+    category = offer_info.get("category", "Packaging")
+
+    # Smart fallback generator if OpenAI is unreachable
+    def get_smart_fallback() -> Dict[str, str]:
+        if last_customer_message:
+            msg_lower = last_customer_message.lower().strip()
+            # 1. Greetings
+            if any(g in msg_lower for g in ["hi", "hello", "hey", "namaste", "good morning", "good evening"]):
+                return {
+                    "suggested_text": f"Hello {shopkeeper_name}! Great connecting with you. How can GreenPack Solutions assist {shop_name} with {p_name} or takeaway supplies today?",
+                    "reasoning": "Friendly contextual greeting in response to customer hello"
+                }
+            # 2. Quantity inquiry / numbers
+            import re
+            numbers = re.findall(r'\b\d+\b', msg_lower)
+            if numbers:
+                req_qty = int(numbers[0])
+                total_val = req_qty * p_price
+                return {
+                    "suggested_text": f"Great choice, {shopkeeper_name}! We have {req_qty:,} pieces of {p_name} ready in stock for you at ₹{p_price:.2f}/piece (Total ₹{total_val:,.2f}). Would you like us to dispatch to {shop_name}?",
+                    "reasoning": f"Confirmed stock and pricing for customer's requested quantity ({req_qty:,} units)"
+                }
+            # 3. Price negotiation
+            if any(w in msg_lower for g in ["rate", "price", "discount", "cheap", "cost", "kam"] for w in [g]):
+                return {
+                    "suggested_text": f"Hi {shopkeeper_name}, for orders exceeding {p_moq:,} units, our best wholesale rate for premium {p_name} is ₹{p_price:.2f}/unit with immediate delivery. Shall we proceed?",
+                    "reasoning": "Handled wholesale price inquiry"
+                }
+            # 4. General inquiry response
+            return {
+                "suggested_text": f"Hi {shopkeeper_name}, we can certainly assist you with {p_name} for {shop_name}. Our ready stock is ₹{p_price:.2f}/unit. Would you like to confirm the delivery address?",
+                "reasoning": "Contextual reply to customer inquiry"
+            }
+
+        # 5. Cold initial pitch (when no prior message)
         return {
-            "suggested_text": fallback_text,
-            "reasoning": "Standard packaging template generated"
+            "suggested_text": (
+                f"Hello {shopkeeper_name}! Greetings from GreenPack Solutions. "
+                f"We have high quality {p_name} available at ₹{p_price:.2f}/piece (MOQ: {p_moq:,} pcs). "
+                f"We currently have {p_qty:,} pieces in ready stock. Would you be interested in placing an order for {shop_name}?"
+            ),
+            "reasoning": "Standard packaging introductory pitch"
         }
 
+    if not client:
+        return get_smart_fallback()
+
     try:
-        prompt = f"""
-You are an expert sales assistant for a packaging manufacturer contacting a shopkeeper on WhatsApp.
+        history_formatted = "\n".join(recent_history[-8:]) if recent_history else "No prior messages."
+        
+        prompt = f"""You are an expert sales representative for GreenPack Solutions (a B2B packaging manufacturer supplying paper cups, takeaway containers, paper bags, burger boxes) chatting directly with a shopkeeper on WhatsApp.
+
 Shopkeeper Name: {shopkeeper_name}
 Shop Name: {shop_name}
-Product Offer: {offer_info.get('product_name')} ({offer_info.get('category')})
-Selling Price: ₹{offer_info.get('selling_price')}/unit
-Available Quantity: {offer_info.get('available_quantity')} units
-Minimum Order Quantity (MOQ): {offer_info.get('minimum_order_quantity')} units
-Intent: {intent}
-Recent messages: {recent_history}
+Vendor Company: GreenPack Solutions
+Product Offer: {p_name} ({category})
+Selling Price: ₹{p_price}/unit
+Available Quantity: {p_qty:,} units
+Minimum Order Quantity (MOQ): {p_moq:,} units
 
-Create a warm, concise, professional WhatsApp message in polite Indian business style.
-Include the product name, price in ₹, MOQ, and a courteous call to action.
-Return JSON:
+Recent Conversation History:
+{history_formatted}
+
+Customer's Latest Message: "{last_customer_message or 'No message yet'}"
+Requested Intent: {intent or 'reply_to_customer'}
+
+TASK:
+Write the exact next WhatsApp reply message that the vendor should send to {shopkeeper_name}.
+Guidelines:
+1. Tone: Natural WhatsApp chat style (1-3 sentences, warm, polite, Indian business context).
+2. Context Awareness: DIRECTLY answer or address what the shopkeeper said in their latest message:
+   - If they asked for a quantity (e.g. "I want 600 cups"), confirm availability, mention the price per unit (₹{p_price}) or total, and ask for confirmation/delivery address.
+   - If they negotiated price or asked for discount, offer a fair bulk tier or polite negotiation.
+   - If they greeted ("Hi"), greet back warmly by first name and ask how you can assist their shop with {p_name} or supplies.
+   - If they asked for samples, confirm sample dispatch.
+   - If starting fresh, give a warm pitch.
+3. NEVER use bracketed placeholders like [Your Name], [Company Name], or [Phone]. Sign off as "GreenPack Solutions" or omit signature for short chat messages.
+4. Output JSON:
 {{
-  "suggested_text": "...",
-  "reasoning": "..."
+  "suggested_text": "<exact WhatsApp message text ready to send>",
+  "reasoning": "<1-sentence explanation of why this reply fits the conversation context>"
 }}
 """
         response = client.chat.completions.create(
             model=settings.EXTRACTION_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            temperature=0.7,
-            max_tokens=300
+            temperature=0.4,
+            max_tokens=250
         )
-        return json.loads(response.choices[0].message.content)
+        data = json.loads(response.choices[0].message.content)
+        return data
     except Exception as e:
         logger.error(f"Error in generate_smart_reply_draft_ai: {e}")
-        p_name = offer_info.get("product_name", "packaging supplies")
-        p_price = offer_info.get("selling_price", 0.0)
-        return {
-            "suggested_text": f"Hello {shopkeeper_name}! We have {p_name} available at ₹{p_price:.2f} per piece. Are you interested in purchasing?",
-            "reasoning": "Fallback draft due to API exception"
-        }
+        return get_smart_fallback()

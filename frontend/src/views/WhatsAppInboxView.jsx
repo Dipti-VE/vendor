@@ -19,6 +19,7 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
   const [inputText, setInputText] = useState('');
   const [replyingToMsg, setReplyingToMsg] = useState(null);
   const [aiDraftLoading, setAiDraftLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState(null);
   const [simLoading, setSimLoading] = useState(false);
   
   const [statusModalMsgId, setStatusModalMsgId] = useState(null);
@@ -72,13 +73,15 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSendMessage = async (e) => {
-    e?.preventDefault();
-    if (!inputText.trim() || !selectedConv) return;
+  const sendMessageDirect = async (text, targetReplyMsg = undefined) => {
+    if (!text || !text.trim() || !selectedConv) return;
 
-    const textToSend = inputText.trim();
+    const textToSend = text.trim();
+    const replyTarget = targetReplyMsg !== undefined ? targetReplyMsg : replyingToMsg;
     setInputText('');
-    const replyTarget = replyingToMsg;
+    setReplyingToMsg(null);
+    setAiSuggestion(null);
+
     try {
       const isTemplateText = ['hello_world', 'hello world', '/template'].includes(textToSend.toLowerCase());
       const payload = {
@@ -102,6 +105,11 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
     } catch (err) {
       alert('Error sending WhatsApp message: ' + err.message);
     }
+  };
+
+  const handleSendMessage = (e) => {
+    e?.preventDefault();
+    sendMessageDirect(inputText, replyingToMsg);
   };
 
   const handleSendTemplate = async () => {
@@ -168,7 +176,7 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
     }
   };
 
-  const handleRequestAiDraft = async () => {
+  const handleRequestAiDraft = async (sendImmediately = false) => {
     if (!selectedConv) return;
     setAiDraftLoading(true);
     try {
@@ -177,11 +185,30 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
         body: JSON.stringify({
           conversation_id: selectedConv.id,
           product_offer_id: selectedConv.product_offer_id,
-          intent: 'initial_pitch'
+          reply_to_message_id: replyingToMsg ? replyingToMsg.id : null
         })
       });
+
       if (res.suggested_text) {
-        setInputText(res.suggested_text);
+        // Automatically quote the target message that AI understood and responded to
+        let targetMsg = replyingToMsg;
+        if (!targetMsg && res.reply_to_message_id) {
+          targetMsg = messages.find((m) => m.id === res.reply_to_message_id) || null;
+        }
+        if (targetMsg) {
+          setReplyingToMsg(targetMsg);
+        }
+
+        if (sendImmediately) {
+          await sendMessageDirect(res.suggested_text, targetMsg);
+        } else {
+          setInputText(res.suggested_text);
+          setAiSuggestion({
+            text: res.suggested_text,
+            reasoning: res.reasoning,
+            targetMsg: targetMsg
+          });
+        }
       }
     } catch (err) {
       alert('Error drafting AI response: ' + err.message);
@@ -485,19 +512,102 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
             </button>
           </div>
 
+          {/* AI Smart Suggestion Banner */}
+          {aiSuggestion && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(16, 185, 129, 0.12))',
+              borderLeft: '4px solid #f59e0b',
+              borderTop: '1px solid rgba(245, 158, 11, 0.2)',
+              padding: '8px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div style={{ fontSize: '0.74rem', flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontWeight: 700, marginBottom: '2px' }}>
+                  <Sparkles size={13} />
+                  <span>AI Smart Reply Context</span>
+                  {aiSuggestion.targetMsg && (
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                      (for: "{aiSuggestion.targetMsg.message_text.slice(0, 35)}...")
+                    </span>
+                  )}
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                  {aiSuggestion.reasoning}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => sendMessageDirect(inputText || aiSuggestion.text, replyingToMsg || aiSuggestion.targetMsg)}
+                  style={{
+                    background: 'linear-gradient(135deg, #059669, #10b981)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '5px',
+                    padding: '4px 10px',
+                    fontSize: '0.74rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    boxShadow: '0 2px 6px rgba(16, 185, 129, 0.25)'
+                  }}
+                  title="Send this AI reply directly to WhatsApp"
+                >
+                  <Send size={12} /> Send Now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiSuggestion(null)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                  title="Dismiss banner"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Input Bar */}
           <div className="chat-input-bar" style={{ padding: '10px 14px', background: '#111b21' }}>
             <div className="chat-input-main">
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={handleRequestAiDraft}
+                onClick={() => handleRequestAiDraft(false)}
                 disabled={aiDraftLoading}
-                style={{ padding: '8px 12px', fontSize: '0.76rem', whiteSpace: 'nowrap' }}
-                title="AI drafts proposal"
+                style={{ padding: '8px 11px', fontSize: '0.76rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '5px' }}
+                title="AI drafts context-aware reply into input field"
               >
                 <Sparkles size={13} color="#f59e0b" />
-                {aiDraftLoading ? '...' : 'AI Draft'}
+                {aiDraftLoading ? 'Drafting...' : 'AI Draft'}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleRequestAiDraft(true)}
+                disabled={aiDraftLoading}
+                style={{
+                  padding: '8px 10px',
+                  fontSize: '0.74rem',
+                  whiteSpace: 'nowrap',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  borderColor: 'rgba(16, 185, 129, 0.3)',
+                  color: '#34d399',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="AI understands context and immediately sends the reply to WhatsApp"
+              >
+                <Zap size={12} />
+                {aiDraftLoading ? '...' : 'AI Send'}
               </button>
 
               <input

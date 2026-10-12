@@ -261,8 +261,10 @@ class SimulateStatusChangeRequest(BaseModel):
 class AIDraftRequest(BaseModel):
     conversation_id: int
     product_offer_id: Optional[int] = None
-    intent: Optional[str] = "initial_pitch" # initial_pitch, negotiate_price, confirm_quantity, follow_up
+    reply_to_message_id: Optional[int] = None
+    intent: Optional[str] = None # initial_pitch, reply_to_customer, negotiate_price, confirm_quantity, follow_up
 
 class AIDraftResponse(BaseModel):
     suggested_text: str
     reasoning: str
+    reply_to_message_id: Optional[int] = None
