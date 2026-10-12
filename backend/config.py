@@ -21,7 +21,7 @@ class Settings:
     # NMVE & Meta WhatsApp Cloud API Configuration
     WHATSAPP_API_KEY: str = os.getenv("WHATSAPP_API_KEY", "")
     WHATSAPP_BASE_URL: str = os.getenv("WHATSAPP_BASE_URL", "https://nmve.io/whatsapp/api/integrations/whatsapp/messages")
-    WHATSAPP_CALLBACK_URL: str = os.getenv("WHATSAPP_CALLBACK_URL", "")
+    WHATSAPP_CALLBACK_URL: str = os.getenv("WHATSAPP_CALLBACK_URL", "https://vendor-ntea.onrender.com/api/webhooks/whatsapp")
     WHATSAPP_TEST_MODE: bool = os.getenv("WHATSAPP_TEST_MODE", "false").lower() in ("true", "1", "yes")
     WHATSAPP_TEST_NUMBER: str = os.getenv("WHATSAPP_TEST_NUMBER", "9064148052")
     WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
