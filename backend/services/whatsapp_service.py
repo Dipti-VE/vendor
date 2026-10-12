@@ -56,7 +56,9 @@ class WhatsAppService:
         recipient_phone: str,
         product_offer_id: Optional[int] = None,
         reply_to_message_id: Optional[int] = None,
-        is_simulation: bool = False
+        is_simulation: bool = False,
+        is_template: bool = False,
+        template_name: Optional[str] = "hello_world"
     ) -> Message:
         """
         Sends message through official Meta API or Demo simulation.
@@ -117,6 +119,11 @@ class WhatsAppService:
                 logger.info(f"WHATSAPP TEST MODE: redirecting {target_phone} -> {test_phone}")
                 target_phone = test_phone
 
+        use_template_mode = is_template or (message_text.strip().lower() in ("hello_world", "hello world", "/template"))
+        actual_template = template_name or getattr(settings, "WHATSAPP_TEMPLATE_NAME", "hello_world")
+        if use_template_mode and message_text.strip().lower() in ("hello_world", "hello world", "/template", ""):
+            db_message.message_text = f"✨ [WhatsApp Template: {actual_template}]"
+
         if not is_simulation and settings.WHATSAPP_API_KEY and not settings.WHATSAPP_API_KEY.startswith("mock"):
             # Check if using NMVE Gateway (default) or Meta Graph API
             is_meta = bool(settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_API_KEY.startswith("EAA"))
@@ -127,15 +134,27 @@ class WhatsAppService:
                     "Authorization": f"Bearer {settings.WHATSAPP_API_KEY}",
                     "Content-Type": "application/json"
                 }
-                payload: Dict[str, Any] = {
-                    "messaging_product": "whatsapp",
-                    "recipient_type": "individual",
-                    "to": target_phone,
-                    "type": "text",
-                    "text": {"body": message_text}
-                }
-                if quoted_provider_id:
-                    payload["context"] = {"message_id": quoted_provider_id}
+                if use_template_mode:
+                    payload: Dict[str, Any] = {
+                        "messaging_product": "whatsapp",
+                        "recipient_type": "individual",
+                        "to": target_phone,
+                        "type": "template",
+                        "template": {
+                            "name": actual_template,
+                            "language": {"code": getattr(settings, "WHATSAPP_TEMPLATE_LANGUAGE", "en_US")}
+                        }
+                    }
+                else:
+                    payload = {
+                        "messaging_product": "whatsapp",
+                        "recipient_type": "individual",
+                        "to": target_phone,
+                        "type": "text",
+                        "text": {"body": message_text}
+                    }
+                    if quoted_provider_id:
+                        payload["context"] = {"message_id": quoted_provider_id}
             else:
                 # NMVE Gateway integration
                 api_url = getattr(settings, "WHATSAPP_BASE_URL", "https://nmve.io/whatsapp/api/integrations/whatsapp/messages")
@@ -145,16 +164,30 @@ class WhatsAppService:
                     "Authorization": f"Bearer {settings.WHATSAPP_API_KEY}",
                     "api-key": settings.WHATSAPP_API_KEY
                 }
-                payload = {
-                    "to": target_phone,
-                    "type": "text",
-                    "text": {"body": message_text},
-                    "referenceId": f"vendor-{conversation.vendor_id}-offer-{product_offer_id or 0}-msg-{db_message.id}"
-                }
+                if use_template_mode:
+                    payload = {
+                        "to": target_phone,
+                        "type": "template",
+                        "template": {
+                            "name": actual_template,
+                            "language": {
+                                "code": getattr(settings, "WHATSAPP_TEMPLATE_LANGUAGE", "en_US")
+                            }
+                        },
+                        "referenceId": f"vendor-{conversation.vendor_id}-offer-{product_offer_id or 0}-msg-{db_message.id}"
+                    }
+                else:
+                    payload = {
+                        "to": target_phone,
+                        "type": "text",
+                        "text": {"body": message_text},
+                        "referenceId": f"vendor-{conversation.vendor_id}-offer-{product_offer_id or 0}-msg-{db_message.id}"
+                    }
+                    if quoted_provider_id:
+                        payload["context"] = {"message_id": quoted_provider_id}
+
                 if getattr(settings, "WHATSAPP_CALLBACK_URL", ""):
                     payload["callbackUrl"] = settings.WHATSAPP_CALLBACK_URL
-                if quoted_provider_id:
-                    payload["context"] = {"message_id": quoted_provider_id}
 
             try:
                 async with httpx.AsyncClient(timeout=15.0) as client:

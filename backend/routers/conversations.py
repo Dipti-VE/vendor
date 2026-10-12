@@ -233,7 +233,41 @@ async def send_conversation_message(
         recipient_phone=shopkeeper.whatsapp_phone,
         product_offer_id=payload.product_offer_id or conv.product_offer_id,
         reply_to_message_id=payload.reply_to_message_id,
-        is_simulation=payload.is_simulation or False
+        is_simulation=payload.is_simulation or False,
+        is_template=payload.is_template or False,
+        template_name=payload.template_name or "hello_world"
+    )
+
+    return format_message_response(db_message, db)
+
+@router.post("/{conversation_id}/initiate-template", response_model=MessageResponse)
+async def initiate_conversation_template(
+    conversation_id: int,
+    template_name: Optional[str] = Query("hello_world"),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    vendor = db.query(Vendor).filter(Vendor.id == conv.vendor_id).first()
+    vendor_phone = vendor.phone_number if vendor else "+919876543210"
+
+    shopkeeper = db.query(Shopkeeper).filter(Shopkeeper.id == conv.shopkeeper_id).first()
+    if not shopkeeper:
+        raise HTTPException(status_code=404, detail="Shopkeeper not found")
+
+    # Send outbound WhatsApp Template (hello_world)
+    db_message = await WhatsAppService.send_whatsapp_message(
+        db=db,
+        conversation=conv,
+        message_text="hello_world",
+        vendor_phone=vendor_phone,
+        recipient_phone=shopkeeper.whatsapp_phone,
+        product_offer_id=conv.product_offer_id,
+        is_simulation=False,
+        is_template=True,
+        template_name=template_name or "hello_world"
     )
 
     return format_message_response(db_message, db)

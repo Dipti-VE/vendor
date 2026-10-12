@@ -77,15 +77,16 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
     const textToSend = inputText.trim();
     setInputText('');
     const replyTarget = replyingToMsg;
-    setReplyingToMsg(null);
-
     try {
+      const isTemplateText = ['hello_world', 'hello world', '/template'].includes(textToSend.toLowerCase());
       const payload = {
         shopkeeper_id: selectedConv.shopkeeper_id,
         message_text: textToSend,
         product_offer_id: selectedConv.product_offer_id,
         reply_to_message_id: replyTarget ? replyTarget.id : null,
-        is_simulation: false
+        is_simulation: false,
+        is_template: isTemplateText,
+        template_name: 'hello_world'
       };
 
       const newMsg = await fetchApi(`/api/conversations/${selectedConv.id}/messages`, {
@@ -98,6 +99,23 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
       loadConversations();
     } catch (err) {
       alert('Error sending WhatsApp message: ' + err.message);
+    }
+  };
+
+  const handleSendTemplate = async () => {
+    if (!selectedConv) return;
+    setSimLoading(true);
+    try {
+      const newMsg = await fetchApi(`/api/conversations/${selectedConv.id}/initiate-template`, {
+        method: 'POST'
+      });
+      setMessages((prev) => [...prev, newMsg]);
+      setTimeout(() => scrollToBottom(), 80);
+      loadConversations();
+    } catch (err) {
+      alert('Error sending WhatsApp template: ' + err.message);
+    } finally {
+      setSimLoading(false);
     }
   };
 
@@ -290,11 +308,36 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
               </div>
             </div>
 
-            {selectedConv.product_name && (
-              <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600 }}>
-                {selectedConv.product_name}
-              </span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={handleSendTemplate}
+                disabled={simLoading}
+                style={{
+                  background: 'linear-gradient(135deg, #059669, #10b981)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '5px 11px',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.25)'
+                }}
+                title="Send Meta registered 'hello_world' template to unlock phone for 24 hours"
+              >
+                <span>⚡ Send "hello_world" Template</span>
+              </button>
+
+              {selectedConv.product_name && (
+                <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600 }}>
+                  {selectedConv.product_name}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Messages Feed */}

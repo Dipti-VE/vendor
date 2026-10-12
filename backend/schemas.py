@@ -175,6 +175,8 @@ class MessageBase(BaseModel):
 class MessageSendRequest(MessageBase):
     shopkeeper_id: int
     is_simulation: Optional[bool] = False
+    is_template: Optional[bool] = False
+    template_name: Optional[str] = "hello_world"
 
 class MessageQuotedSummary(BaseModel):
     id: int
