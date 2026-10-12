@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Check, CheckCheck, Clock, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { fetchApi } from '../api';
+import { formatTime, formatDate } from '../utils/dateUtils';
 
 export default function DeliveryStatusModal({ isOpen, onClose, messageId }) {
   const [history, setHistory] = useState([]);
@@ -110,11 +111,11 @@ export default function DeliveryStatusModal({ isOpen, onClose, messageId }) {
                               <span>{h.status}</span>
                             </div>
                             <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                              {new Date(h.status_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              {formatTime(h.status_timestamp, { second: '2-digit' })}
                             </span>
                           </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            Date: {new Date(h.status_timestamp).toLocaleDateString()} | Event ID: {h.provider_event_id || 'internal_ack'}
+                            Date: {formatDate(h.status_timestamp)} | Event ID: {h.provider_event_id || 'internal_ack'}
                           </div>
                         </div>
                       </div>

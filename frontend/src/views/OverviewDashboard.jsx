@@ -4,6 +4,7 @@ import {
   CheckCheck, ArrowUpRight, Plus, ExternalLink, ShieldAlert, TrendingUp
 } from 'lucide-react';
 import { fetchApi } from '../api';
+import { formatTime, formatDateTime } from '../utils/dateUtils';
 
 export default function OverviewDashboard({ onNavigate, onOpenPostOffer, onOpenSimulator }) {
   const [metrics, setMetrics] = useState(null);
@@ -231,8 +232,8 @@ export default function OverviewDashboard({ onNavigate, onOpenPostOffer, onOpenS
                       </span>
                     )}
                   </div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-                    {new Date(msg.message_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }} title={formatDateTime(msg.message_timestamp)}>
+                    {formatTime(msg.message_timestamp)}
                   </span>
                 </div>
 

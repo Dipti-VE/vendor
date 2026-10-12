@@ -9,6 +9,7 @@ from ..models import Conversation, Message, Shopkeeper, ProductOffer, Vendor, Me
 from ..schemas import (
     ConversationResponse, ConversationLeadStatusUpdate,
     MessageResponse, MessageSendRequest, MessageQuotedSummary,
+    MessageStatusHistoryResponse,
     AIDraftRequest, AIDraftResponse
 )
 from ..services.whatsapp_service import WhatsAppService
@@ -16,6 +17,13 @@ from ..services.ai_service import generate_smart_reply_draft_ai
 from ..services.connection_manager import ws_manager
 
 router = APIRouter(prefix="/conversations", tags=["Conversations & WhatsApp Inbox"])
+
+def to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 def format_message_response(msg: Message, db: Session) -> MessageResponse:
     # Resolve quoted message if any
@@ -28,7 +36,7 @@ def format_message_response(msg: Message, db: Session) -> MessageResponse:
                 message_text=parent.message_text,
                 sender_phone=parent.sender_phone,
                 direction=parent.direction,
-                message_timestamp=parent.message_timestamp
+                message_timestamp=to_utc(parent.message_timestamp)
             )
 
     return MessageResponse(
@@ -48,15 +56,25 @@ def format_message_response(msg: Message, db: Session) -> MessageResponse:
         recipient_phone=msg.recipient_phone,
         direction=msg.direction,
         message_text=msg.message_text,
-        message_timestamp=msg.message_timestamp,
-        actual_sent_timestamp=msg.actual_sent_timestamp,
-        created_at=msg.created_at,
+        message_timestamp=to_utc(msg.message_timestamp),
+        actual_sent_timestamp=to_utc(msg.actual_sent_timestamp),
+        created_at=to_utc(msg.created_at),
         delivery_status=msg.delivery_status,
         reply_link_type=msg.reply_link_type,
         is_demo=msg.is_demo,
         inferred_confidence=msg.inferred_confidence,
         inferred_reason=msg.inferred_reason,
-        status_history=msg.status_history or []
+        status_history=[
+            MessageStatusHistoryResponse(
+                id=h.id,
+                message_id=h.message_id,
+                status=h.status,
+                status_timestamp=to_utc(h.status_timestamp),
+                provider_event_id=h.provider_event_id,
+                created_at=to_utc(h.created_at)
+            )
+            for h in (msg.status_history or [])
+        ]
     )
 
 @router.get("", response_model=List[ConversationResponse])
@@ -116,9 +134,9 @@ def get_conversations(
             product_name=conv.product_offer.product_name if conv.product_offer else None,
             status=conv.status,
             lead_status=conv.lead_status,
-            created_at=conv.created_at,
-            updated_at=conv.updated_at,
-            last_message_at=conv.last_message_at,
+            created_at=to_utc(conv.created_at),
+            updated_at=to_utc(conv.updated_at),
+            last_message_at=to_utc(conv.last_message_at),
             latest_message=latest_resp,
             unread_count=unread_count,
             total_messages=total_msg_count
@@ -178,9 +196,9 @@ def get_or_create_conversation(
         product_name=conv.product_offer.product_name if conv.product_offer else None,
         status=conv.status,
         lead_status=conv.lead_status,
-        created_at=conv.created_at,
-        updated_at=conv.updated_at,
-        last_message_at=conv.last_message_at,
+        created_at=to_utc(conv.created_at),
+        updated_at=to_utc(conv.updated_at),
+        last_message_at=to_utc(conv.last_message_at),
         latest_message=None,
         unread_count=0,
         total_messages=0
@@ -310,9 +328,9 @@ async def update_conversation_lead_status(
         product_name=conv.product_offer.product_name if conv.product_offer else None,
         status=conv.status,
         lead_status=conv.lead_status,
-        created_at=conv.created_at,
-        updated_at=conv.updated_at,
-        last_message_at=conv.last_message_at
+        created_at=to_utc(conv.created_at),
+        updated_at=to_utc(conv.updated_at),
+        last_message_at=to_utc(conv.last_message_at)
     )
 
 @router.post("/{conversation_id}/ai-draft", response_model=AIDraftResponse)

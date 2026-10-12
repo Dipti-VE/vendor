@@ -609,10 +609,22 @@ body {
   margin-bottom: 6px;
   font-size: 0.76rem;
 }
+.quoted-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
 .quoted-box-sender {
   font-weight: 700;
   color: var(--wa-green);
-  margin-bottom: 2px;
+  font-size: 0.74rem;
+}
+.quoted-box-time {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: var(--font-sans);
 }
 .quoted-box-text {
   color: var(--text-muted);

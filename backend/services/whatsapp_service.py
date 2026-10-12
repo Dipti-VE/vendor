@@ -421,6 +421,18 @@ class WhatsAppService:
                 if ai_res.get("target_message_id"):
                     reply_to_msg = db.query(Message).filter(Message.id == ai_res.get("target_message_id")).first()
 
+        # Fallback: if message is still not linked, link to the most recent outbound message in this chat
+        if not reply_to_msg:
+            last_outbound = db.query(Message).filter(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND"
+            ).order_by(Message.message_timestamp.desc()).first()
+            if last_outbound:
+                reply_to_msg = last_outbound
+                reply_link_type = "CONVERSATION_FLOW"
+                if last_outbound.product_offer_id and not target_offer_id:
+                    target_offer_id = last_outbound.product_offer_id
+
         # 5. Save incoming message
         now = datetime.now(timezone.utc)
         inbound_message = Message(

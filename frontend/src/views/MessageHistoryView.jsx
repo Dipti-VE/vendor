@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Search, CheckCheck, Check, Clock, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { fetchApi } from '../api';
 import DeliveryStatusModal from '../components/DeliveryStatusModal';
+import { formatDateTime } from '../utils/dateUtils';
 
 export default function MessageHistoryView() {
   const [messages, setMessages] = useState([]);
@@ -153,7 +154,7 @@ export default function MessageHistoryView() {
 
                     <td>
                       <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                        {new Date(m.message_timestamp).toLocaleDateString()} {new Date(m.message_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatDateTime(m.message_timestamp)}
                       </div>
                     </td>
                   </tr>

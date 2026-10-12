@@ -6,6 +6,8 @@ import {
 import { fetchApi } from '../api';
 import DeliveryStatusModal from '../components/DeliveryStatusModal';
 
+import { formatTime, formatDateTime } from '../utils/dateUtils';
+
 export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId }) {
   const [conversations, setConversations] = useState([]);
   const [selectedConv, setSelectedConv] = useState(null);
@@ -254,7 +256,7 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
                     <div className="conv-top">
                       <span className="conv-name" style={{ fontSize: '0.88rem' }}>{conv.shopkeeper_name}</span>
                       <span className="conv-time">
-                        {conv.latest_message ? new Date(conv.latest_message.message_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        {conv.latest_message ? formatTime(conv.latest_message.message_timestamp) : ''}
                       </span>
                     </div>
 
@@ -358,11 +360,16 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
                       {/* Quoted Original Message */}
                       {msg.quoted_message && (
                         <div className="quoted-box">
-                          <div className="quoted-box-sender">
-                            {msg.quoted_message.direction === 'OUTBOUND' ? 'You' : selectedConv.shopkeeper_name}
+                          <div className="quoted-box-header">
+                            <span className="quoted-box-sender">
+                              ↩ {msg.quoted_message.direction === 'OUTBOUND' ? 'You' : selectedConv.shopkeeper_name}
+                            </span>
+                            <span className="quoted-box-time">
+                              {formatDateTime(msg.quoted_message.message_timestamp)}
+                            </span>
                           </div>
                           <div className="quoted-box-text">
-                            {msg.quoted_message.message_text}
+                            "{msg.quoted_message.message_text}"
                           </div>
                         </div>
                       )}
@@ -372,8 +379,8 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
 
                       {/* Timestamp & Status */}
                       <div className="message-meta">
-                        <span>
-                          {new Date(msg.message_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        <span title={formatDateTime(msg.message_timestamp)}>
+                          {formatTime(msg.message_timestamp)}
                         </span>
 
                         {isOutbound && (
@@ -415,7 +422,7 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
             <div style={{ background: '#182229', borderLeft: '4px solid #25d366', padding: '6px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: '0.74rem' }}>
                 <span style={{ color: '#25d366', fontWeight: 700 }}>
-                  Replying to {replyingToMsg.direction === 'OUTBOUND' ? 'your message' : selectedConv.shopkeeper_name}:
+                  Replying to {replyingToMsg.direction === 'OUTBOUND' ? 'your message' : selectedConv.shopkeeper_name} • {formatDateTime(replyingToMsg.message_timestamp)}:
                 </span>
                 <p style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   "{replyingToMsg.message_text}"

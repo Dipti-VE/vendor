@@ -2,13 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..database import get_db
 from ..models import Message, MessageStatusHistory, Shopkeeper, ProductOffer
 from ..schemas import MessageResponse, MessageStatusHistoryResponse, MessageQuotedSummary
 
 router = APIRouter(prefix="/messages", tags=["Messages & Audit Trail"])
+
+def to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 def format_message_audit(msg: Message, db: Session) -> MessageResponse:
     quoted = None
@@ -20,7 +27,7 @@ def format_message_audit(msg: Message, db: Session) -> MessageResponse:
                 message_text=parent.message_text,
                 sender_phone=parent.sender_phone,
                 direction=parent.direction,
-                message_timestamp=parent.message_timestamp
+                message_timestamp=to_utc(parent.message_timestamp)
             )
 
     return MessageResponse(
@@ -40,15 +47,25 @@ def format_message_audit(msg: Message, db: Session) -> MessageResponse:
         recipient_phone=msg.recipient_phone,
         direction=msg.direction,
         message_text=msg.message_text,
-        message_timestamp=msg.message_timestamp,
-        actual_sent_timestamp=msg.actual_sent_timestamp,
-        created_at=msg.created_at,
+        message_timestamp=to_utc(msg.message_timestamp),
+        actual_sent_timestamp=to_utc(msg.actual_sent_timestamp),
+        created_at=to_utc(msg.created_at),
         delivery_status=msg.delivery_status,
         reply_link_type=msg.reply_link_type,
         is_demo=msg.is_demo,
         inferred_confidence=msg.inferred_confidence,
         inferred_reason=msg.inferred_reason,
-        status_history=msg.status_history or []
+        status_history=[
+            MessageStatusHistoryResponse(
+                id=h.id,
+                message_id=h.message_id,
+                status=h.status,
+                status_timestamp=to_utc(h.status_timestamp),
+                provider_event_id=h.provider_event_id,
+                created_at=to_utc(h.created_at)
+            )
+            for h in (msg.status_history or [])
+        ]
     )
 
 @router.get("", response_model=List[MessageResponse])
@@ -97,4 +114,14 @@ def get_message_status_history(message_id: int, db: Session = Depends(get_db)):
         MessageStatusHistory.message_id == message_id
     ).order_by(MessageStatusHistory.status_timestamp.asc()).all()
 
-    return history
+    return [
+        MessageStatusHistoryResponse(
+            id=h.id,
+            message_id=h.message_id,
+            status=h.status,
+            status_timestamp=to_utc(h.status_timestamp),
+            provider_event_id=h.provider_event_id,
+            created_at=to_utc(h.created_at)
+        )
+        for h in history
+    ]
