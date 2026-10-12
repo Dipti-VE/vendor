@@ -36,7 +36,11 @@ export class WSClient {
 
   connect() {
     let wsUrl = import.meta.env.VITE_WS_URL;
-    if (!wsUrl) {
+    if (!wsUrl && BASE_URL) {
+      const wsProtocol = BASE_URL.startsWith('https') ? 'wss:' : 'ws:';
+      const hostOnly = BASE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      wsUrl = `${wsProtocol}//${hostOnly}/ws`;
+    } else if (!wsUrl) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       wsUrl = `${protocol}//${window.location.host}/ws`;
     }
