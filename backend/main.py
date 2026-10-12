@@ -62,8 +62,8 @@ app.include_router(offers.router, prefix=settings.API_PREFIX)
 app.include_router(conversations.router, prefix=settings.API_PREFIX)
 app.include_router(messages.router, prefix=settings.API_PREFIX)
 app.include_router(leads.router, prefix=settings.API_PREFIX)
-app.include_router(demo.router, prefix=settings.API_PREFIX)
 app.include_router(webhooks.router) # Root level /webhooks/whatsapp
+app.include_router(webhooks.router, prefix=settings.API_PREFIX) # /api/webhooks/whatsapp
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

@@ -18,10 +18,14 @@ class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     EXTRACTION_MODEL: str = os.getenv("EXTRACTION_MODEL", "gpt-4o-mini")
     
-    # Meta WhatsApp Cloud API
+    # NMVE & Meta WhatsApp Cloud API Configuration
     WHATSAPP_API_KEY: str = os.getenv("WHATSAPP_API_KEY", "")
-    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "109823485723491")
-    WHATSAPP_BUSINESS_ACCOUNT_ID: str = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "209834718293812")
+    WHATSAPP_BASE_URL: str = os.getenv("WHATSAPP_BASE_URL", "https://nmve.io/whatsapp/api/integrations/whatsapp/messages")
+    WHATSAPP_CALLBACK_URL: str = os.getenv("WHATSAPP_CALLBACK_URL", "")
+    WHATSAPP_TEST_MODE: bool = os.getenv("WHATSAPP_TEST_MODE", "false").lower() in ("true", "1", "yes")
+    WHATSAPP_TEST_NUMBER: str = os.getenv("WHATSAPP_TEST_NUMBER", "9064148052")
+    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    WHATSAPP_BUSINESS_ACCOUNT_ID: str = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
     WEBHOOK_VERIFY_TOKEN: str = os.getenv("WEBHOOK_VERIFY_TOKEN", "smart_vendor_marketplace_secure_token_2026")
     META_GRAPH_API_VERSION: str = "v19.0"
     

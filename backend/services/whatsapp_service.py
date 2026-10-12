@@ -18,6 +18,34 @@ class WhatsAppService:
         unique_token = uuid.uuid4().hex[:16]
         return f"wamid.HBgM{unique_token.upper()}"
 
+    @staticmethod
+    def clean_whatsapp_phone(raw_phone: Optional[str]) -> str:
+        if not raw_phone:
+            return ""
+        clean = "".join(filter(str.isdigit, str(raw_phone)))
+        if len(clean) == 10:
+            clean = "91" + clean
+        return clean
+
+    @classmethod
+    def extract_provider_message_id(cls, response_body: Any) -> Optional[str]:
+        if isinstance(response_body, dict):
+            for key in ("messageId", "message_id", "externalMessageId", "external_message_id", "id"):
+                val = response_body.get(key)
+                if val:
+                    return str(val)
+            if "messages" in response_body and isinstance(response_body["messages"], list) and response_body["messages"]:
+                first = response_body["messages"][0]
+                if isinstance(first, dict) and "id" in first:
+                    return str(first["id"])
+            for nested in ("data", "result", "message"):
+                nested_val = response_body.get(nested)
+                if isinstance(nested_val, dict):
+                    res = cls.extract_provider_message_id(nested_val)
+                    if res:
+                        return res
+        return None
+
     @classmethod
     async def send_whatsapp_message(
         cls,
@@ -78,40 +106,71 @@ class WhatsAppService:
         db.add(status_entry_pending)
         db.commit()
 
-        # 2. Attempt real Meta API call if not simulation and real key configured
+        # 2. Attempt real WhatsApp dispatch (NMVE Gateway or Meta Cloud API)
         real_sent = False
         provider_msg_id = None
         
+        target_phone = cls.clean_whatsapp_phone(recipient_phone)
+        if getattr(settings, "WHATSAPP_TEST_MODE", False) and getattr(settings, "WHATSAPP_TEST_NUMBER", ""):
+            test_phone = cls.clean_whatsapp_phone(settings.WHATSAPP_TEST_NUMBER)
+            if test_phone:
+                logger.info(f"WHATSAPP TEST MODE: redirecting {target_phone} -> {test_phone}")
+                target_phone = test_phone
+
         if not is_simulation and settings.WHATSAPP_API_KEY and not settings.WHATSAPP_API_KEY.startswith("mock"):
-            api_url = f"https://graph.facebook.com/{settings.META_GRAPH_API_VERSION}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
-            headers = {
-                "Authorization": f"Bearer {settings.WHATSAPP_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload: Dict[str, Any] = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": clean_recipient_phone,
-                "type": "text",
-                "text": {"body": message_text}
-            }
-            if quoted_provider_id:
-                payload["context"] = {"message_id": quoted_provider_id}
+            # Check if using NMVE Gateway (default) or Meta Graph API
+            is_meta = bool(settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_API_KEY.startswith("EAA"))
+            
+            if is_meta:
+                api_url = f"https://graph.facebook.com/{settings.META_GRAPH_API_VERSION}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+                headers = {
+                    "Authorization": f"Bearer {settings.WHATSAPP_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload: Dict[str, Any] = {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": target_phone,
+                    "type": "text",
+                    "text": {"body": message_text}
+                }
+                if quoted_provider_id:
+                    payload["context"] = {"message_id": quoted_provider_id}
+            else:
+                # NMVE Gateway integration
+                api_url = getattr(settings, "WHATSAPP_BASE_URL", "https://nmve.io/whatsapp/api/integrations/whatsapp/messages")
+                headers = {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {settings.WHATSAPP_API_KEY}",
+                    "api-key": settings.WHATSAPP_API_KEY
+                }
+                payload = {
+                    "to": target_phone,
+                    "type": "text",
+                    "text": {"body": message_text},
+                    "referenceId": f"vendor-{conversation.vendor_id}-offer-{product_offer_id or 0}-msg-{db_message.id}"
+                }
+                if getattr(settings, "WHATSAPP_CALLBACK_URL", ""):
+                    payload["callbackUrl"] = settings.WHATSAPP_CALLBACK_URL
+                if quoted_provider_id:
+                    payload["context"] = {"message_id": quoted_provider_id}
 
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=15.0) as client:
                     resp = await client.post(api_url, json=payload, headers=headers)
-                    if resp.status_code == 200:
+                    logger.info(f"WhatsApp API POST {api_url} -> Status {resp.status_code}: {resp.text}")
+                    if resp.status_code in (200, 201, 202):
                         data = resp.json()
-                        messages_res = data.get("messages", [])
-                        if messages_res and "id" in messages_res[0]:
-                            provider_msg_id = messages_res[0]["id"]
+                        extracted_id = cls.extract_provider_message_id(data)
+                        if extracted_id:
+                            provider_msg_id = extracted_id
                             real_sent = True
                             db_message.is_demo = False
                     else:
-                        logger.warning(f"Meta WhatsApp API returned HTTP {resp.status_code}: {resp.text}. Falling back to demo provider dispatch.")
+                        logger.warning(f"WhatsApp API returned HTTP {resp.status_code}: {resp.text}. Falling back to demo dispatch.")
             except Exception as e:
-                logger.error(f"Error calling Meta Cloud API: {e}. Falling back to demo mode provider dispatch.")
+                logger.error(f"Error calling WhatsApp API: {e}. Falling back to demo mode provider dispatch.")
 
         # 3. Fallback or Demo Dispatch
         if not provider_msg_id:
