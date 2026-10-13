@@ -22,13 +22,23 @@ def format_message_audit(msg: Message, db: Session) -> MessageResponse:
     if msg.reply_to_message_id:
         parent = db.query(Message).filter(Message.id == msg.reply_to_message_id).first()
         if parent:
-            quoted = MessageQuotedSummary(
-                id=parent.id,
-                message_text=parent.message_text,
-                sender_phone=parent.sender_phone,
-                direction=parent.direction,
-                message_timestamp=to_utc(parent.message_timestamp)
-            )
+            # Safeguard: if an INBOUND message points to another INBOUND message (customer quoting themselves),
+            # resolve instead to the actual preceding OUTBOUND message from the vendor
+            if msg.direction == "INBOUND" and parent.direction == "INBOUND":
+                parent = db.query(Message).filter(
+                    Message.conversation_id == msg.conversation_id,
+                    Message.direction == "OUTBOUND",
+                    Message.message_timestamp <= msg.message_timestamp
+                ).order_by(Message.message_timestamp.desc()).first()
+
+            if parent and parent.id != msg.id:
+                quoted = MessageQuotedSummary(
+                    id=parent.id,
+                    message_text=parent.message_text,
+                    sender_phone=parent.sender_phone,
+                    direction=parent.direction,
+                    message_timestamp=to_utc(parent.message_timestamp)
+                )
 
     return MessageResponse(
         id=msg.id,

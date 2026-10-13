@@ -385,7 +385,10 @@ export default function WhatsAppInboxView({ initialShopkeeperId, initialOfferId 
                   <div key={msg.id} className={`message-bubble-row ${isOutbound ? 'outbound' : 'inbound'}`}>
                     <div className={`message-bubble ${isOutbound ? 'outbound' : 'inbound'}`}>
                       {/* Quoted Original Message */}
-                      {msg.quoted_message && (
+                      {msg.quoted_message && 
+                       msg.quoted_message.id !== msg.id &&
+                       msg.quoted_message.message_text?.trim() !== msg.message_text?.trim() &&
+                       !(msg.direction === 'INBOUND' && msg.quoted_message.direction === 'INBOUND') && (
                         <div className="quoted-box">
                           <div className="quoted-box-header">
                             <span className="quoted-box-sender">

@@ -45,29 +45,28 @@ def infer_message_context_ai(
             for o in active_offers
         ]
         history_summary = [
-            f"Msg #{m['id']} [{m['direction']}]: '{m['text']}'"
+            f"Vendor Msg #{m['id']}: '{m['text']}'"
             for m in recent_messages[-5:]
+            if m.get("direction") == "OUTBOUND"
         ]
 
-        prompt = f"""
-You are an AI assistant in a packaging marketplace (paper cups, takeaway containers, paper bags, burger boxes).
+        prompt = f"""You are an AI assistant in a B2B packaging marketplace (paper cups, takeaway containers, paper bags, burger boxes).
 Analyze this incoming WhatsApp message from a shopkeeper:
 Incoming Message: "{incoming_text}"
 
-Active Offers:
+Active Vendor Product Offers:
 {chr(10).join(offers_summary)}
 
-Recent Conversation History:
-{chr(10).join(history_summary)}
+Recent Vendor Outbound Messages:
+{chr(10).join(history_summary) if history_summary else "None"}
 
-Determine if the incoming message clearly discusses or negotiates a specific offer or earlier message.
+Determine if the incoming message from the shopkeeper refers to or requests one of the Active Product Offers.
 Respond ONLY with a JSON object in this format:
 {{
   "inferred": true/false,
   "confidence": 0.0 to 1.0,
   "target_offer_id": <int or null>,
-  "target_message_id": <int or null>,
-  "reason": "<short 1-sentence explanation of why this offer/message was inferred>"
+  "reason": "<short 1-sentence explanation of why this offer was inferred>"
 }}
 Only set "inferred": true if confidence is >= 0.70 and the context is clear.
 """

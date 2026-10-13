@@ -383,55 +383,64 @@ class WhatsAppService:
             db.commit()
             db.refresh(conversation)
 
-        # 4. Check native reply reference (context_reply_to_id)
+        # 4. Determine parent message being replied to (reply_to_msg)
         reply_to_msg = None
         reply_link_type = "NONE"
         inferred_confidence = None
         inferred_reason = None
         target_offer_id = conversation.product_offer_id
 
-        if context_reply_to_id:
-            # Search by provider ID
-            reply_to_msg = db.query(Message).filter(Message.whatsapp_message_id == context_reply_to_id).first()
-            if reply_to_msg:
-                reply_link_type = "EXACT"
-                if reply_to_msg.product_offer_id:
-                    target_offer_id = reply_to_msg.product_offer_id
-            else:
-                reply_link_type = "NONE"
+        # Find the most recent OUTBOUND message sent by the vendor in this conversation
+        last_outbound = db.query(Message).filter(
+            Message.conversation_id == conversation.id,
+            Message.direction == "OUTBOUND"
+        ).order_by(Message.message_timestamp.desc()).first()
 
-        # If not exact reply, check if AI can infer context
-        if reply_link_type == "NONE":
+        # 4a. Check native WhatsApp quote reference (context_reply_to_id)
+        if context_reply_to_id:
+            native_parent = db.query(Message).filter(Message.whatsapp_message_id == context_reply_to_id).first()
+            if native_parent:
+                reply_to_msg = native_parent
+                reply_link_type = "EXACT"
+                if native_parent.product_offer_id:
+                    target_offer_id = native_parent.product_offer_id
+
+        # 4b. In conversation flow (when customer doesn't swipe to quote):
+        # The incoming reply directly responds to the vendor's most recent outbound message (e.g. "hii", pitch, etc.)
+        if not reply_to_msg and last_outbound:
+            reply_to_msg = last_outbound
+            reply_link_type = "CONVERSATION_FLOW"
+            if last_outbound.product_offer_id and not target_offer_id:
+                target_offer_id = last_outbound.product_offer_id
+
+        # 4c. AI Context Inference: detect if message mentions a specific product offer (e.g. "600 cups" -> Paper Cups)
+        try:
             from .ai_service import infer_message_context_ai
             active_offers = db.query(ProductOffer).filter(ProductOffer.status == "ACTIVE").all()
-            recent_msgs = db.query(Message).filter(
-                Message.conversation_id == conversation.id
+            # Only consider vendor OUTBOUND messages for context matching, NEVER customer INBOUND messages
+            outbound_history = db.query(Message).filter(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND"
             ).order_by(Message.message_timestamp.desc()).limit(5).all()
 
             offers_data = [{"id": o.id, "product_name": o.product_name, "category": o.category, "selling_price": o.selling_price, "available_quantity": o.available_quantity} for o in active_offers]
-            msgs_data = [{"id": m.id, "direction": m.direction, "text": m.message_text} for m in reversed(recent_msgs)]
+            msgs_data = [{"id": m.id, "direction": m.direction, "text": m.message_text} for m in reversed(outbound_history)]
 
             ai_res = infer_message_context_ai(message_text, offers_data, msgs_data)
             if ai_res.get("inferred"):
-                reply_link_type = "INFERRED"
                 inferred_confidence = ai_res.get("confidence")
                 inferred_reason = ai_res.get("reason")
                 if ai_res.get("target_offer_id"):
                     target_offer_id = ai_res.get("target_offer_id")
-                if ai_res.get("target_message_id"):
-                    reply_to_msg = db.query(Message).filter(Message.id == ai_res.get("target_message_id")).first()
+        except Exception as e:
+            logger.warning(f"AI context inference skipped: {e}")
 
-        # Fallback: if message is still not linked, link to the most recent outbound message in this chat
-        if not reply_to_msg:
-            last_outbound = db.query(Message).filter(
-                Message.conversation_id == conversation.id,
-                Message.direction == "OUTBOUND"
-            ).order_by(Message.message_timestamp.desc()).first()
-            if last_outbound:
-                reply_to_msg = last_outbound
-                reply_link_type = "CONVERSATION_FLOW"
-                if last_outbound.product_offer_id and not target_offer_id:
-                    target_offer_id = last_outbound.product_offer_id
+        # 4d. STRICT SAFEGUARD: An incoming message from a customer can NEVER reply to an INBOUND message!
+        # If any link points to an INBOUND message (customer quoting themselves), redirect to last outbound.
+        if reply_to_msg and reply_to_msg.direction == "INBOUND":
+            logger.warning(f"Inbound message #{reply_to_msg.id} was invalid reply target for inbound message. Overriding to last outbound.")
+            reply_to_msg = last_outbound
+            reply_link_type = "CONVERSATION_FLOW" if last_outbound else "NONE"
 
         # 5. Save incoming message
         now = datetime.now(timezone.utc)
